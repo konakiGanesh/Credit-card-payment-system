@@ -1,0 +1,16 @@
+import { useEffect, useState } from 'react'
+import { api, errorMessage } from '../services/api'
+
+export default function Admin() {
+  const [summary, setSummary] = useState(null)
+  const [users, setUsers] = useState([])
+  const [cards, setCards] = useState([])
+  const [transactions, setTransactions] = useState([])
+  const [logs, setLogs] = useState([])
+  const [error, setError] = useState('')
+  async function load() { try { const [s,u,c,t,l] = await Promise.all(['/api/admin/summary/','/api/admin/users/','/api/admin/cards/','/api/admin/transactions/','/api/admin/logs/'].map(path => api.get(path))); setSummary(s.data); setUsers(u.data.results); setCards(c.data.results); setTransactions(t.data.results); setLogs(l.data.results) } catch(e) { setError(errorMessage(e)) } }
+  useEffect(() => { load() }, [])
+  async function toggle(user) { try { await api.patch(`/api/admin/users/${user.id}/`, {is_active: !user.is_active}); load() } catch(e) { setError(errorMessage(e)) } }
+  async function exportCsv() { try { const {data} = await api.get('/api/admin/transactions/export/', {responseType:'blob'}); const url = URL.createObjectURL(data); const a = document.createElement('a'); a.href = url; a.download = 'transactions.csv'; a.click(); URL.revokeObjectURL(url); load() } catch(e) { setError(errorMessage(e)) } }
+  return <div className="space-y-5"><h1 className="text-2xl font-bold">Admin dashboard</h1>{error && <p className="error">{error}</p>}<div className="grid gap-3 sm:grid-cols-4">{['users','cards','transactions','successful_total'].map(k => <div className="panel" key={k}><p className="muted">{k.replace('_',' ')}</p><strong className="text-2xl">{summary?.[k] ?? '—'}</strong></div>)}</div><section className="panel"><h2 className="font-bold">Daily successful payments (last 30 days)</h2>{summary?.daily.map(d => <p key={d.day} className="border-b py-2">{d.day}: {d.count} payments · ${d.total}</p>)}{!summary?.daily.length && <p className="muted">No successful payments yet.</p>}</section><section className="panel"><h2 className="font-bold">Users</h2>{users.map(u => <p key={u.id} className="flex justify-between border-b py-2">{u.username} · {u.email} · {u.role}<button onClick={() => toggle(u)}>{u.is_active ? 'Deactivate' : 'Activate'}</button></p>)}</section><section className="panel"><h2 className="font-bold">Cards (first page)</h2>{cards.map(c => <p key={c.id} className="border-b py-2">{c.card_brand} {c.masked_number} · {c.cardholder_name}</p>)}</section><section className="panel"><div className="flex justify-between"><h2 className="font-bold">Transactions (first page)</h2><button onClick={exportCsv}>Export CSV</button></div>{transactions.map(t => <p key={t.reference} className="border-b py-2">{t.reference} · ${t.amount} · {t.status}</p>)}</section><section className="panel"><h2 className="font-bold">Admin activity (first page)</h2>{logs.map(l => <p key={l.id} className="border-b py-2">{l.action} · {l.target_type} {l.target_id} · {new Date(l.timestamp).toLocaleString()}</p>)}</section></div>
+}

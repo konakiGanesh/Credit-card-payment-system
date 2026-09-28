@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+staticfiles/
+*.sql
+*.dump
+*.sqlite3
+*.log
+.idea/
+.DS_Store

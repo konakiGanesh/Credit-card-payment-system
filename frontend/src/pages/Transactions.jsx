@@ -1,0 +1,12 @@
+import { useEffect, useState } from 'react'
+import { api, errorMessage } from '../services/api'
+
+export default function Transactions() {
+  const [filters, setFilters] = useState({ status: '', date_from: '', date_to: '', amount_min: '', amount_max: '' })
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState({ results: [], count: 0 })
+  const [error, setError] = useState('')
+  useEffect(() => { const controller = new AbortController(); api.get('/api/transactions/', { params: { ...Object.fromEntries(Object.entries(filters).filter(([,v]) => v !== '')), page }, signal: controller.signal }).then(res => {setData(res.data); setError('')}).catch(e => { if (e.code !== 'ERR_CANCELED') setError(errorMessage(e)) }); return () => controller.abort() }, [filters, page])
+  function update(key,value) { setFilters({...filters, [key]:value}); setPage(1) }
+  return <section className="panel"><h1 className="mb-5 text-2xl font-bold">Transaction history</h1><div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[['status','Status'],['date_from','From date'],['date_to','To date'],['amount_min','Min USD'],['amount_max','Max USD']].map(([key,label]) => <label key={key} className="text-sm">{label}{key === 'status' ? <select value={filters[key]} onChange={e => update(key,e.target.value)}><option value="">All</option>{['PENDING','SUCCESS','FAILED'].map(s => <option key={s}>{s}</option>)}</select> : <input type={key.startsWith('date') ? 'date' : 'number'} min={key.startsWith('amount') ? 0 : undefined} value={filters[key]} onChange={e => update(key,e.target.value)} />}</label>)}</div>{error && <p className="error">{error}</p>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b">{['Date','Reference','Card','Amount','Status'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{data.results.map(t => <tr key={t.reference} className="border-b"><td className="p-3">{new Date(t.created_at).toLocaleString()}</td><td className="p-3 font-mono text-xs">{t.reference}</td><td className="p-3">•••• {t.card_last_four}</td><td className="p-3">${t.amount}</td><td className="p-3">{t.status}</td></tr>)}</tbody></table></div><div className="mt-4 flex items-center gap-3"><button disabled={page === 1} onClick={() => setPage(page-1)}>Previous</button><span className="muted">Page {page} · {data.count} total</span><button disabled={!data.next} onClick={() => setPage(page+1)}>Next</button></div></section>
+}
