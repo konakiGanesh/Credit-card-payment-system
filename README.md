@@ -50,28 +50,41 @@ Prerequisites: Docker Engine/Desktop with Compose v2. Copy `.env.example` to `.e
 4. Visit frontend **http://localhost:5173**, Django docs **http://localhost:8000/api/docs/**, FastAPI docs **http://localhost:8001/docs**, Django Admin **http://localhost:8000/django-admin/**.
 5. Shut down: `docker compose down`; `docker compose down -v` **deletes** the MySQL volume.
 
-The Django container applies migrations and collects static files before starting gunicorn. Do not deploy this development Compose file unchanged to the public internet: see Security. Docker could not be run during development on the authoring machine; verify `docker compose up --build` on a Docker-enabled machine.
+The Django container applies migrations and collects static files before starting gunicorn. Do not deploy this development Compose file unchanged to the public internet: see Security. Docker/MySQL startup has **not** been verified on the authoring Windows machine: the Docker CLI is not installed there. Install Docker Desktop with WSL 2/virtualization enabled by an administrator, then verify `docker compose up --build` on that host. Local SQLite data is separate and is **not** migrated automatically into MySQL.
 
 ## Local development without Docker
 
-Install Python **3.13**, Node.js **22+**, npm, and a running MySQL 8.4 instance. Create the database and a non-root MySQL user with privileges on that database; configure `.env` for `DB_HOST=127.0.0.1`. Install Django and FastAPI requirements in a virtual environment, npm dependencies in the frontend, then run migrations. On Windows PowerShell from the repo root:
+For a local demo *without Docker*, use SQLite (Python **3.13** and Node.js **22+** required); the deployed database remains MySQL. Start all three programs in **separate PowerShell terminals at the repository root**. Copy `.env.example` to `.env` once and replace every placeholder secret/password with your own distinct random values. The untracked `.env` is read into each terminal by [scripts/load-env.ps1](scripts/load-env.ps1); it is never committed. Keep `JWT_SIGNING_KEY`, issuer, audience and `SERVICE_API_KEY` identical between the two Python services. In the first terminal:
 
 ```powershell
 Copy-Item .env.example .env
-# Edit .env; load its variables into your shell by your preferred dotenv loader.
+# Edit .env now; do not keep the example secrets or database passwords.
 py -3.13 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install -r backend\django_app\requirements.txt -r backend\fastapi_service\requirements.txt
+& .\scripts\load-env.ps1
+$env:DB_ENGINE='sqlite'
+$env:DJANGO_ALLOWED_HOSTS='localhost,127.0.0.1'
 & .\.venv\Scripts\python.exe backend\django_app\manage.py migrate
-& .\.venv\Scripts\python.exe backend\django_app\manage.py createsuperuser
-& .\.venv\Scripts\python.exe backend\django_app\manage.py runserver 0.0.0.0:8000
-# In another terminal (run from backend/fastapi_service so `app` resolves):
-& ..\..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
-# In frontend directory:
-npm ci
-npm run dev
+& .\.venv\Scripts\python.exe backend\django_app\manage.py runserver 127.0.0.1:8000
 ```
 
-For local development only, `DB_ENGINE=sqlite` skips MySQL; migrations then use SQLite. MySQL remains the required deployment datastore. Django does **not** auto-load `.env`; export the values into the shell, use a dotenv runner or use Compose (`env_file`).
+In a second terminal at the repository root:
+
+```powershell
+& .\scripts\load-env.ps1
+$env:DJANGO_INTERNAL_URL='http://127.0.0.1:8000'
+$env:PYTHONPATH='backend\fastapi_service'
+& .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+In a third terminal at the repository root:
+
+```powershell
+npm ci --prefix .\frontend
+npm run dev --prefix .\frontend
+```
+
+Open `http://localhost:5173`. Register a user in the UI; to get a superuser for admin pages, open a **fourth** PowerShell terminal, load `.env`, set `DB_ENGINE=sqlite`, and run `& .\.venv\Scripts\python.exe backend\django_app\manage.py createsuperuser` (type your password directly into the terminal). Django does **not** read `.env` automatically. If running an independently installed local MySQL instead, set `DB_ENGINE=mysql`, `DB_HOST=127.0.0.1` and your real DB credentials before Django migrations; you must create that MySQL database/user separately. Do not run the local SQLite and MySQL backends as if they shared data.
 
 ## Configuration
 
@@ -79,7 +92,9 @@ All expected variables are in [.env.example](.env.example): `DJANGO_SECRET_KEY`,
 
 ## API documentation and status codes
 
-Detailed OpenAPI: Django `/api/schema/` (downloadable YAML; checked-in snapshot [backend/django_app/schema.yaml](backend/django_app/schema.yaml)), interactive Django `/api/docs/`; FastAPI `/openapi.json` and `/docs`. Django's `/internal/` service routes are intentionally omitted from public OpenAPI and require `X-Service-Key`. Import [postman/credit-card-payment-system.json](postman/credit-card-payment-system.json) into Postman, register/login (login stores collection tokens), then add a **test** card, pay and inspect transactions; log in as a staff account for admin calls. Set collection variables `base_url`, `payment_url`, `card_id`, `transaction_id` and `user_id` as needed. Do not sync live credentials to shared Postman workspaces.
+Detailed OpenAPI: Django `/api/schema/` (downloadable YAML; checked-in snapshot [backend/django_app/schema.yaml](backend/django_app/schema.yaml)), interactive Django `/api/docs/`; FastAPI `/openapi.json` and `/docs`. Django's `/internal/` service routes are intentionally omitted from public OpenAPI and require `X-Service-Key`. Import [postman/credit-card-payment-system.json](postman/credit-card-payment-system.json) into the installed Postman Desktop app for manual testing: set `base_url=http://localhost:8000` and `payment_url=http://localhost:8001`; register (change the example username on subsequent runs), login (the response script saves tokens), add a **synthetic** card (script saves its ID), make payment, inspect transaction history (script saves a transaction ID), filter and inspect details. Delete the card **after** making a payment; logout last. For admin requests, create a Django superuser, log in again with that account and set the `user_id` variable appropriately; regular-user requests to admin endpoints must return 403. Do not sync live credentials to shared Postman workspaces.
+
+For **repeatable, asserted Postman testing**, import [postman/cardlab-smoke.json](postman/cardlab-smoke.json) into Postman and run its 12 requests in order with Collection Runner, or run `npx --yes newman run postman/cardlab-smoke.json` from the repo root. It creates a new synthetic user on every run and asserts login, card masking, successful and failed simulated payments, history/filter/detail, deletion and logout. This was executed against the live local SQLite-backed services on September 28, 2026: **12 requests, 13 assertions, 0 failures**. It does not test the separate staff-only/admin endpoints or MySQL; those require a superuser and a running Docker/MySQL deployment.
 
 | Method | Endpoint | Access | Purpose |
 |---|---|---|---|
@@ -100,6 +115,25 @@ Transaction filter query parameters: `date_from`, `date_to` (YYYY-MM-DD), `amoun
 ## Database and backups
 
 See [database/README.md](database/README.md) for the ER diagram, keys, indexes, deletion semantics, migration and dump instructions. `User` extends Django `AbstractUser`; `Card` contains only last four, not even a stored masked-number field. Transactions retain a card ID snapshot and last four even after the card is removed. Apply migrations with `docker compose exec django python manage.py migrate`. Never commit or distribute dumps containing user PII.
+
+**Data connection:** React in the browser never connects to MySQL or SQLite. It calls Django at `VITE_DJANGO_URL` for auth/cards/history/admin and FastAPI at `VITE_PAYMENT_URL` for payments. FastAPI calls Django over `DJANGO_INTERNAL_URL` using a service key; Django ORM reads/writes the database specified by `DB_ENGINE`/`DB_*`. In Docker, the database host is **`mysql`**, *not* `localhost`; the browser talks to exposed host ports 8000/8001. Frontend `VITE_*` variables are injected at **build time**; rebuild after changing them. The table names are `users_user`, `cards_card`, `transactions_transaction`, `admin_panel_adminlog`, plus Django auth/session/migration/token tables.
+
+To see the **currently running local SQLite** tables from the repository root, without opening or printing user records:
+
+```powershell
+& .\.venv\Scripts\python.exe -m sqlite3 backend\django_app\db.sqlite3 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+& .\.venv\Scripts\python.exe -m sqlite3 backend\django_app\db.sqlite3 'PRAGMA table_info(cards_card);'
+& .\.venv\Scripts\python.exe -m sqlite3 backend\django_app\db.sqlite3 'SELECT status, COUNT(*) FROM transactions_transaction GROUP BY status;'
+```
+
+After Docker is installed and MySQL is started with Compose, open the MySQL CLI **inside the container** (the DB port is deliberately not exposed to the host):
+
+```powershell
+docker compose ps
+docker compose exec mysql sh -c 'mysql -u "$MYSQL_USER" -p "$MYSQL_DATABASE"'
+```
+
+Type the password from your private `.env` directly at the MySQL prompt; do not paste it into chat or commands. Inside MySQL run `SHOW TABLES;`, `DESCRIBE cards_card;`, `DESCRIBE transactions_transaction;` and `SELECT status, COUNT(*) FROM transactions_transaction GROUP BY status;`. Or visit `/django-admin/` as a superuser for a permission-controlled GUI to users/cards/transactions/admin logs. A MySQL GUI tool would require a separately configured, loopback-only database port; there is no external MySQL port in the default Compose file.
 
 ## Tests and coverage
 

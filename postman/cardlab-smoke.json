@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "CardLab — repeatable user-flow smoke test",
+    "description": "Run only against a local development instance. Creates a unique synthetic user and test card. Requires Django, FastAPI and a migrated database.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://localhost:8000"},
+    {"key": "payment_url", "value": "http://localhost:8001"},
+    {"key": "smoke_password", "value": "Synthetic-Only-CardLab-8492!"},
+    {"key": "smoke_user", "value": ""},
+    {"key": "access_token", "value": ""},
+    {"key": "refresh_token", "value": ""},
+    {"key": "card_id", "value": ""},
+    {"key": "transaction_id", "value": ""}
+  ],
+  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{access_token}}", "type": "string"}]},
+  "item": [
+    {
+      "name": "Register unique synthetic user",
+      "event": [
+        {"listen": "prerequest", "script": {"type": "text/javascript", "exec": ["pm.collectionVariables.set('smoke_user', 'smoke_' + Date.now());"]}},
+        {"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Registration returned 201', () => pm.response.to.have.status(201));", "pm.test('Password absent from response', () => pm.expect(pm.response.text()).not.to.include(pm.collectionVariables.get('smoke_password')));"]}}
+      ],
+      "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/register/", "body": {"mode": "raw", "raw": "{\"username\":\"{{smoke_user}}\",\"email\":\"{{smoke_user}}@example.test\",\"password\":\"{{smoke_password}}\"}"}}
+    },
+    {
+      "name": "Login",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Login returned 200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const body = pm.response.json(); pm.collectionVariables.set('access_token', body.access); pm.collectionVariables.set('refresh_token', body.refresh); }"]}}],
+      "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/login/", "body": {"mode": "raw", "raw": "{\"username\":\"{{smoke_user}}\",\"password\":\"{{smoke_password}}\"}"}}
+    },
+    {
+      "name": "Current user",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Authenticated profile matches new user', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get('smoke_user')); });"]}}],
+      "request": {"method": "GET", "url": "{{base_url}}/api/auth/me/"}
+    },
+    {
+      "name": "Add synthetic test card",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Card is masked, PAN not returned', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().masked_number).to.eql('**** **** **** 4242'); pm.expect(pm.response.text()).not.to.include('4242424242424242'); });", "if (pm.response.code === 201) pm.collectionVariables.set('card_id', pm.response.json().id);"]}}],
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/cards/", "body": {"mode": "raw", "raw": "{\"card_type\":\"credit\",\"cardholder_name\":\"Demo User\",\"number\":\"4242424242424242\",\"expiry_month\":12,\"expiry_year\":2030}"}}
+    },
+    {
+      "name": "List own cards",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Card visible to its owner', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().results.some(c => c.id === Number(pm.collectionVariables.get('card_id')))).to.be.true; });"]}}],
+      "request": {"method": "GET", "url": "{{base_url}}/api/cards/"}
+    },
+    {
+      "name": "Successful simulated payment",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Payment succeeded for $12.50', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('SUCCESS'); });"]}}],
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "Idempotency-Key", "value": "{{$guid}}"}], "url": "{{payment_url}}/payments", "body": {"mode": "raw", "raw": "{\"card_id\":{{card_id}},\"amount\":\"12.50\",\"currency\":\"USD\"}"}}
+    },
+    {
+      "name": "Failed simulated payment",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Amount over $1000 was declined', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('FAILED'); });"]}}],
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "Idempotency-Key", "value": "{{$guid}}"}], "url": "{{payment_url}}/payments", "body": {"mode": "raw", "raw": "{\"card_id\":{{card_id}},\"amount\":\"1001.00\",\"currency\":\"USD\"}"}}
+    },
+    {
+      "name": "Transaction history",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Both transactions visible in history', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().count).to.eql(2); });", "if (pm.response.code === 200 && pm.response.json().results.length) pm.collectionVariables.set('transaction_id', pm.response.json().results[0].id);"]}}],
+      "request": {"method": "GET", "url": "{{base_url}}/api/transactions/"}
+    },
+    {
+      "name": "Filter successful transactions",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Status filter returns only the success', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().count).to.eql(1); pm.expect(pm.response.json().results[0].status).to.eql('SUCCESS'); });"]}}],
+      "request": {"method": "GET", "url": "{{base_url}}/api/transactions/?status=SUCCESS"}
+    },
+    {
+      "name": "Transaction detail",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Saved transaction detail can be retrieved', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('transaction_id'))); });"]}}],
+      "request": {"method": "GET", "url": "{{base_url}}/api/transactions/{{transaction_id}}/"}
+    },
+    {
+      "name": "Delete test card",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Card deleted', () => pm.response.to.have.status(204));"]}}],
+      "request": {"method": "DELETE", "url": "{{base_url}}/api/cards/{{card_id}}/"}
+    },
+    {
+      "name": "Logout",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Refresh token blacklisted', () => pm.response.to.have.status(204));", "pm.collectionVariables.unset('access_token'); pm.collectionVariables.unset('refresh_token'); pm.collectionVariables.unset('smoke_password');"]}}],
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/logout/", "body": {"mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}"}}
+    }
+  ]
+}
