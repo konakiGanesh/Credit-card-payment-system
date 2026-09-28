@@ -33,12 +33,14 @@ backend/django_app/       Django configuration, users, cards, transactions, admi
 backend/fastapi_service/  Payment API, JWT validation, simulator, tests
 frontend/                 React views, memory-only auth, Tailwind, nginx image
 database/                 MySQL Docker image and schema documentation
-postman/                  Importable API collection
+postman/                  One importable Postman collection (auth, cards, payments, transactions, admin)
 screenshots/              Screenshot instructions (no fabricated captures)
 docker-compose.yml        Four-service setup
 .env.example              Configuration template (never commit .env)
 pytest.ini                Combined test configuration
 ```
+
+Only **one** file needs editing to configure everything: `.env` (copied from `.env.example`). Both Django and FastAPI load it automatically via `python-dotenv`/`pydantic-settings` — no manual export step and no loader script required, whether you run locally or in Docker.
 
 ## Quick start (Docker)
 
@@ -54,14 +56,13 @@ The Django container applies migrations and collects static files before startin
 
 ## Local development without Docker
 
-For a local demo *without Docker*, use SQLite (Python **3.13** and Node.js **22+** required); the deployed database remains MySQL. Start all three programs in **separate PowerShell terminals at the repository root**. Copy `.env.example` to `.env` once and replace every placeholder secret/password with your own distinct random values. The untracked `.env` is read into each terminal by [scripts/load-env.ps1](scripts/load-env.ps1); it is never committed. Keep `JWT_SIGNING_KEY`, issuer, audience and `SERVICE_API_KEY` identical between the two Python services. In the first terminal:
+For a local demo *without Docker*, use SQLite (Python **3.13** and Node.js **22+** required); the deployed database remains MySQL. Start all three programs in **separate PowerShell terminals at the repository root**. Copy `.env.example` to `.env` once and replace every placeholder secret/password with your own distinct random values — both services read this **same file automatically**, no export step needed. Keep `JWT_SIGNING_KEY`, issuer, audience and `SERVICE_API_KEY` identical between the two Python services (they already are, since both read the one `.env`). In the first terminal:
 
 ```powershell
 Copy-Item .env.example .env
 # Edit .env now; do not keep the example secrets or database passwords.
 py -3.13 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install -r backend\django_app\requirements.txt -r backend\fastapi_service\requirements.txt
-& .\scripts\load-env.ps1
 $env:DB_ENGINE='sqlite'
 $env:DJANGO_ALLOWED_HOSTS='localhost,127.0.0.1'
 & .\.venv\Scripts\python.exe backend\django_app\manage.py migrate
@@ -71,7 +72,6 @@ $env:DJANGO_ALLOWED_HOSTS='localhost,127.0.0.1'
 In a second terminal at the repository root:
 
 ```powershell
-& .\scripts\load-env.ps1
 $env:DJANGO_INTERNAL_URL='http://127.0.0.1:8000'
 $env:PYTHONPATH='backend\fastapi_service'
 & .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
@@ -84,7 +84,7 @@ npm ci --prefix .\frontend
 npm run dev --prefix .\frontend
 ```
 
-Open `http://localhost:5173`. Register a user in the UI; to get a superuser for admin pages, open a **fourth** PowerShell terminal, load `.env`, set `DB_ENGINE=sqlite`, and run `& .\.venv\Scripts\python.exe backend\django_app\manage.py createsuperuser` (type your password directly into the terminal). Django does **not** read `.env` automatically. If running an independently installed local MySQL instead, set `DB_ENGINE=mysql`, `DB_HOST=127.0.0.1` and your real DB credentials before Django migrations; you must create that MySQL database/user separately. Do not run the local SQLite and MySQL backends as if they shared data.
+Open `http://localhost:5173`. Register a user in the UI; to get a superuser for admin pages, open a **fourth** PowerShell terminal and run `$env:DB_ENGINE='sqlite'; & .\.venv\Scripts\python.exe backend\django_app\manage.py createsuperuser` (type your password directly into the terminal). `DB_ENGINE` and a couple of local-only settings still need setting per terminal since they intentionally differ between local SQLite and Docker/MySQL; every secret in `.env` itself, however, loads automatically. If running an independently installed local MySQL instead, set `DB_ENGINE=mysql`, `DB_HOST=127.0.0.1` and your real DB credentials before Django migrations; you must create that MySQL database/user separately. Do not run the local SQLite and MySQL backends as if they shared data.
 
 ## Configuration
 
@@ -92,9 +92,20 @@ All expected variables are in [.env.example](.env.example): `DJANGO_SECRET_KEY`,
 
 ## API documentation and status codes
 
-Detailed OpenAPI: Django `/api/schema/` (downloadable YAML; checked-in snapshot [backend/django_app/schema.yaml](backend/django_app/schema.yaml)), interactive Django `/api/docs/`; FastAPI `/openapi.json` and `/docs`. Django's `/internal/` service routes are intentionally omitted from public OpenAPI and require `X-Service-Key`. Import [postman/credit-card-payment-system.json](postman/credit-card-payment-system.json) into the installed Postman Desktop app for manual testing: set `base_url=http://localhost:8000` and `payment_url=http://localhost:8001`; register (change the example username on subsequent runs), login (the response script saves tokens), add a **synthetic** card (script saves its ID), make payment, inspect transaction history (script saves a transaction ID), filter and inspect details. Delete the card **after** making a payment; logout last. For admin requests, create a Django superuser, log in again with that account and set the `user_id` variable appropriately; regular-user requests to admin endpoints must return 403. Do not sync live credentials to shared Postman workspaces.
+Detailed OpenAPI: Django `/api/schema/` (downloadable YAML; checked-in snapshot [backend/django_app/schema.yaml](backend/django_app/schema.yaml)), interactive Django `/api/docs/`; FastAPI `/openapi.json` and `/docs`. Django's `/internal/` service routes are intentionally omitted from public OpenAPI and require `X-Service-Key`.
 
-For **repeatable, asserted Postman testing**, import [postman/cardlab-smoke.json](postman/cardlab-smoke.json) into Postman and run its 12 requests in order with Collection Runner, or run `npx --yes newman run postman/cardlab-smoke.json` from the repo root. It creates a new synthetic user on every run and asserts login, card masking, successful and failed simulated payments, history/filter/detail, deletion and logout. This was executed against the live local SQLite-backed services on September 28, 2026: **12 requests, 13 assertions, 0 failures**. It does not test the separate staff-only/admin endpoints or MySQL; those require a superuser and a running Docker/MySQL deployment.
+There is **one** Postman collection: [postman/credit-card-payment-system.json](postman/credit-card-payment-system.json), with folders numbered in the order to run them:
+
+1. **Auth** — register, login (saves tokens automatically), current user, refresh token.
+2. **Cards** — add a synthetic test card (saves its ID), list cards.
+3. **Payments (FastAPI)** — a successful ≤ $1000 payment and a declined > $1000 payment, both asserted.
+4. **Transactions** — history (saves a transaction ID), filtering, detail.
+5. **Admin** — needs a Django superuser; log in with that account first (edit the `username`/`password` collection variables) — regular users correctly get 403 here.
+6. **Cleanup** — delete the test card and log out, run last.
+
+Import the file into the Postman desktop app, set `base_url=http://localhost:8000` and `payment_url=http://localhost:8001`, then run folders 1–4 (and 6) top-to-bottom with your app running — no manual token copying needed. Do not sync live credentials to shared Postman workspaces.
+
+For **repeatable, scripted testing**, run the whole collection headlessly with Newman: `npx --yes newman run postman/credit-card-payment-system.json --folder "1. Auth" --folder "2. Cards" --folder "3. Payments (FastAPI)" --folder "4. Transactions" --folder "6. Cleanup (run last)"`. This was executed against the live local SQLite-backed services on September 28, 2026: **13 requests, 4 assertions, 0 failures**. Admin folder 5 needs a superuser's own credentials and is verified separately.
 
 | Method | Endpoint | Access | Purpose |
 |---|---|---|---|

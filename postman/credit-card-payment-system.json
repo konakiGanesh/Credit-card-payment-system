@@ -1,34 +1,71 @@
 {
-  "info": {"name": "CardLab simulated payments", "description": "Simulation only; never submit real card numbers.", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "info": {
+    "name": "CardLab — Credit Card Payment System (Simulation)",
+    "description": "One collection for the whole project: Django (auth/cards/transactions/admin) + FastAPI (payments). Simulation only — never submit real card numbers. Run the folders in order 1 to 5 on a first pass; each folder saves the variables the next one needs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
   "variable": [
     {"key": "base_url", "value": "http://localhost:8000"},
     {"key": "payment_url", "value": "http://localhost:8001"},
+    {"key": "username", "value": "demo_user"},
+    {"key": "password", "value": "Use-A-Unique-Strong-Password-123!"},
     {"key": "access_token", "value": ""},
     {"key": "refresh_token", "value": ""},
-    {"key": "card_id", "value": "1"},
-    {"key": "transaction_id", "value": "1"},
+    {"key": "card_id", "value": ""},
+    {"key": "transaction_id", "value": ""},
     {"key": "user_id", "value": "1"}
   ],
   "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{access_token}}", "type": "string"}]},
   "item": [
-    {"name": "Register", "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/register/", "body": {"mode": "raw", "raw": "{\"username\":\"demo\",\"email\":\"demo@example.test\",\"password\":\"Use-A-Unique-Strong-Password-123!\"}"}}},
-    {"name": "Login", "event": [{"listen": "test", "script": {"exec": ["if (pm.response.code === 200) { const data = pm.response.json(); pm.collectionVariables.set('access_token', data.access); pm.collectionVariables.set('refresh_token', data.refresh); }"], "type": "text/javascript"}}], "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/login/", "body": {"mode": "raw", "raw": "{\"username\":\"demo\",\"password\":\"Use-A-Unique-Strong-Password-123!\"}"}}},
-    {"name": "Refresh token", "event": [{"listen": "test", "script": {"exec": ["if (pm.response.code === 200) { const data = pm.response.json(); pm.collectionVariables.set('access_token', data.access); if (data.refresh) pm.collectionVariables.set('refresh_token', data.refresh); }"], "type": "text/javascript"}}], "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/token/refresh/", "body": {"mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}"}}},
-    {"name": "Current user", "request": {"method": "GET", "url": "{{base_url}}/api/auth/me/"}},
-    {"name": "Add test card", "event": [{"listen": "test", "script": {"exec": ["if (pm.response.code === 201) pm.collectionVariables.set('card_id', pm.response.json().id);"], "type": "text/javascript"}}], "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/cards/", "body": {"mode": "raw", "raw": "{\"card_type\":\"credit\",\"cardholder_name\":\"Demo User\",\"number\":\"4242424242424242\",\"expiry_month\":12,\"expiry_year\":2030}"}}},
-    {"name": "List cards", "request": {"method": "GET", "url": "{{base_url}}/api/cards/"}},
-    {"name": "Make payment", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "Idempotency-Key", "value": "{{$guid}}"}], "url": "{{payment_url}}/payments", "body": {"mode": "raw", "raw": "{\"card_id\":{{card_id}},\"amount\":\"12.50\",\"currency\":\"USD\"}"}}},
-    {"name": "Transaction history", "event": [{"listen": "test", "script": {"exec": ["if (pm.response.code === 200) { const rows = pm.response.json().results || []; if (rows.length) pm.collectionVariables.set('transaction_id', rows[0].id); }"], "type": "text/javascript"}}], "request": {"method": "GET", "url": "{{base_url}}/api/transactions/"}},
-    {"name": "Filter transactions", "request": {"method": "GET", "url": "{{base_url}}/api/transactions/?status=SUCCESS&amount_min=1&amount_max=1000&page=1"}},
-    {"name": "Transaction detail", "request": {"method": "GET", "url": "{{base_url}}/api/transactions/{{transaction_id}}/"}},
-    {"name": "Delete card", "request": {"method": "DELETE", "url": "{{base_url}}/api/cards/{{card_id}}/"}},
-    {"name": "Logout", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/logout/", "body": {"mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}"}}},
-    {"name": "Admin users", "request": {"method": "GET", "url": "{{base_url}}/api/admin/users/"}},
-    {"name": "Admin update user", "request": {"method": "PATCH", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/admin/users/{{user_id}}/", "body": {"mode": "raw", "raw": "{\"is_active\":false}"}}},
-    {"name": "Admin cards", "request": {"method": "GET", "url": "{{base_url}}/api/admin/cards/"}},
-    {"name": "Admin transactions", "request": {"method": "GET", "url": "{{base_url}}/api/admin/transactions/"}},
-    {"name": "Admin summary", "request": {"method": "GET", "url": "{{base_url}}/api/admin/summary/"}},
-    {"name": "Admin activity logs", "request": {"method": "GET", "url": "{{base_url}}/api/admin/logs/"}},
-    {"name": "Admin CSV export", "request": {"method": "GET", "url": "{{base_url}}/api/admin/transactions/export/"}}
+    {
+      "name": "1. Auth",
+      "item": [
+        {"name": "Register", "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/register/", "body": {"mode": "raw", "raw": "{\"username\":\"{{username}}\",\"email\":\"{{username}}@example.test\",\"password\":\"{{password}}\"}"}}},
+        {"name": "Login", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const d = pm.response.json(); pm.collectionVariables.set('access_token', d.access); pm.collectionVariables.set('refresh_token', d.refresh); }"]}}], "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/login/", "body": {"mode": "raw", "raw": "{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}"}}},
+        {"name": "Current user (me)", "request": {"method": "GET", "url": "{{base_url}}/api/auth/me/"}},
+        {"name": "Refresh token", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["if (pm.response.code === 200) { const d = pm.response.json(); pm.collectionVariables.set('access_token', d.access); if (d.refresh) pm.collectionVariables.set('refresh_token', d.refresh); }"]}}], "request": {"auth": {"type": "noauth"}, "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/token/refresh/", "body": {"mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}"}}}
+      ]
+    },
+    {
+      "name": "2. Cards",
+      "item": [
+        {"name": "Add a synthetic test card", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Card is masked, PAN not returned', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().masked_number).to.eql('**** **** **** 4242'); pm.expect(pm.response.text()).not.to.include('4242424242424242'); });", "if (pm.response.code === 201) pm.collectionVariables.set('card_id', pm.response.json().id);"]}}], "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/cards/", "body": {"mode": "raw", "raw": "{\"card_type\":\"credit\",\"cardholder_name\":\"Demo User\",\"number\":\"4242424242424242\",\"expiry_month\":12,\"expiry_year\":2030}"}}},
+        {"name": "List my cards", "request": {"method": "GET", "url": "{{base_url}}/api/cards/"}}
+      ]
+    },
+    {
+      "name": "3. Payments (FastAPI)",
+      "item": [
+        {"name": "Successful payment (<= $1000)", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('SUCCESS', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('SUCCESS'); });"]}}], "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "Idempotency-Key", "value": "{{$guid}}"}], "url": "{{payment_url}}/payments", "body": {"mode": "raw", "raw": "{\"card_id\":{{card_id}},\"amount\":\"12.50\",\"currency\":\"USD\"}"}}},
+        {"name": "Failed payment (> $1000)", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('FAILED', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('FAILED'); });"]}}], "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "Idempotency-Key", "value": "{{$guid}}"}], "url": "{{payment_url}}/payments", "body": {"mode": "raw", "raw": "{\"card_id\":{{card_id}},\"amount\":\"1001.00\",\"currency\":\"USD\"}"}}}
+      ]
+    },
+    {
+      "name": "4. Transactions",
+      "item": [
+        {"name": "History (paginated)", "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["if (pm.response.code === 200) { const rows = pm.response.json().results || []; if (rows.length) pm.collectionVariables.set('transaction_id', rows[0].id); }"]}}], "request": {"method": "GET", "url": "{{base_url}}/api/transactions/"}},
+        {"name": "Filter by status/amount/date", "request": {"method": "GET", "url": "{{base_url}}/api/transactions/?status=SUCCESS&amount_min=1&amount_max=1000&page=1"}},
+        {"name": "Transaction detail", "request": {"method": "GET", "url": "{{base_url}}/api/transactions/{{transaction_id}}/"}}
+      ]
+    },
+    {
+      "name": "5. Admin (needs a Django superuser login above)",
+      "item": [
+        {"name": "List users", "request": {"method": "GET", "url": "{{base_url}}/api/admin/users/"}},
+        {"name": "Activate/deactivate a user", "request": {"method": "PATCH", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/admin/users/{{user_id}}/", "body": {"mode": "raw", "raw": "{\"is_active\":false}"}}},
+        {"name": "List all cards", "request": {"method": "GET", "url": "{{base_url}}/api/admin/cards/"}},
+        {"name": "List all transactions", "request": {"method": "GET", "url": "{{base_url}}/api/admin/transactions/"}},
+        {"name": "Daily summary & stats", "request": {"method": "GET", "url": "{{base_url}}/api/admin/summary/"}},
+        {"name": "Admin activity logs", "request": {"method": "GET", "url": "{{base_url}}/api/admin/logs/"}},
+        {"name": "Export transactions CSV", "request": {"method": "GET", "url": "{{base_url}}/api/admin/transactions/export/"}}
+      ]
+    },
+    {
+      "name": "6. Cleanup (run last)",
+      "item": [
+        {"name": "Delete card", "request": {"method": "DELETE", "url": "{{base_url}}/api/cards/{{card_id}}/"}},
+        {"name": "Logout", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": "{{base_url}}/api/auth/logout/", "body": {"mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}"}}}
+      ]
+    }
   ]
 }

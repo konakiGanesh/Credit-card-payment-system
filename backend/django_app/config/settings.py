@@ -3,8 +3,15 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent.parent
+
+# Auto-load the repo-root .env for local development. In Docker, real
+# environment variables are already injected by Compose, and this file
+# will simply not exist inside the container, so load_dotenv is a no-op.
+load_dotenv(REPO_ROOT / ".env")
 
 
 def required(name: str) -> str:

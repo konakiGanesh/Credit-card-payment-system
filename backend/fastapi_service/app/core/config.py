@@ -1,5 +1,10 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/fastapi_service/app/core/config.py -> repo root is 5 levels up.
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
@@ -10,7 +15,9 @@ class Settings(BaseSettings):
     django_internal_url: str = "http://django:8000"
     cors_allowed_origins: str = ""
 
-    model_config = SettingsConfigDict(extra="ignore")
+    # Auto-loads the repo-root .env for local development if present; real
+    # process environment variables (e.g. injected by Docker) always win.
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
 
     @property
     def origins(self) -> list[str]:
